@@ -1,0 +1,35 @@
+# Environment Configuration
+.env
+
+# Dependency directory
+node_modules/*
+node_modules
+
+# Test coverage directory
+coverage
+
+# Ignore Apple macOS Desktop Services Store
+.DS_Store
+
+# Logs
+logs
+*.log
+
+# extensions build output
+extensions/*/build
+extensions/*/dist
+
+# lock files
+
+
+
+
+# Ignore shopify files created during app dev
+.shopify/*
+.shopify.lock
+
+shopify.app.densumes-trieve-extension.toml
+shopify.app.cdxker-search-extension.toml
+shopify.app.vidyoot-testing.toml
+shopify.app.trieve-search-extension.toml
+shopify.app.toml

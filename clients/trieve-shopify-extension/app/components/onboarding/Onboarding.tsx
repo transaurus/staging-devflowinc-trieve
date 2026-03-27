@@ -1,0 +1,96 @@
+import { Card, Collapsible, Text } from "@shopify/polaris";
+import { CaretUpIcon, CheckCircleIcon } from "@shopify/polaris-icons";
+import { cn } from "app/utils/cn";
+import { useOnboarding } from "app/utils/onboarding";
+
+export const Onboarding = () => {
+  const onboarding = useOnboarding();
+
+  if (onboarding.currentStep && onboarding.currentStep.hidden) {
+    return null;
+  }
+
+  return (
+    <Card padding={"0"}>
+      <div className="flex justify-between p-4">
+        <Text variant="headingMd" as="h2">
+          Getting Started With Trieve
+        </Text>
+        <div className="flex gap-4">
+          <button
+            className="text-[12px] hover:underline opacity-40"
+            onClick={onboarding.skipOnboarding}
+          >
+            Hide Tutorial
+          </button>
+        </div>
+      </div>
+      <div>
+        {onboarding.allSteps.map((step) => {
+          if (step.hidden) {
+            return null;
+          }
+          const isCurrent = onboarding?.currentStep?.id === step.id;
+          const isCompleted = onboarding?.stepCompletions[step.id];
+          return (
+            <div className="border-t px-2 border-t-neutral-200" key={step.id}>
+              <button
+                onClick={() => {
+                  if (isCurrent) {
+                    return onboarding.collapseAllSteps();
+                  }
+                  onboarding.goToStep(step.id);
+                }}
+                className={cn(
+                  "flex w-full justify-between items-center p-1 px-2",
+                )}
+              >
+                <div className="flex gap-2 items-center">
+                  <div
+                    className={cn(
+                      "transition-colors duration-100 text-base",
+                      isCurrent ? "text-black" : "text-neutral-500",
+                    )}
+                  >
+                    {step.title}
+                  </div>
+                  {isCompleted && (
+                    <CheckCircleIcon height={20} width={20} fill="green" />
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "p-2 fill-black transition-transform",
+                    isCurrent ? "rotate-180" : "",
+                  )}
+                >
+                  <CaretUpIcon width={20} height={20} />
+                </div>
+              </button>
+              <Collapsible expandOnPrint open={isCurrent} id={step.id}>
+                {
+                  <div className="w-full">
+                    <step.body
+                      goToNextStep={() => {
+                        if (step.id === onboarding.currentStep?.id) {
+                          onboarding.goToNextStep();
+                        }
+                      }}
+                      goToPreviousStep={onboarding.goToPreviousStep}
+                      broadcastCompletion={() => {
+                        onboarding.setStepCompletions((prev) => ({
+                          ...prev,
+                          [step.id]: true,
+                        }));
+                      }}
+                    />
+                  </div>
+                }
+              </Collapsible>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+};

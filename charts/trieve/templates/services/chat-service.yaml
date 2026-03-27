@@ -1,0 +1,17 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: chat-service
+  labels:
+    app.kubernetes.io/name: chat-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 80
+      protocol: TCP
+      name: chat
+  selector:
+    app.kubernetes.io/name: chat
+    app.kubernetes.io/instance: {{ .Release.Name }}

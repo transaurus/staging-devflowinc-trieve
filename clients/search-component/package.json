@@ -1,0 +1,96 @@
+{
+  "name": "trieve-search-component",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/*",
+    "dist/**/*"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./styles": {
+      "types": "./dist/styles.d.ts",
+      "default": "./dist/index.css"
+    },
+    "./vanilla": {
+      "import": "./dist/vanilla/index.js"
+    }
+  },
+  "version": "0.4.82",
+  "license": "MIT",
+  "homepage": "https://github.com/devflowinc/trieve/tree/main/clients/search-component",
+  "scripts": {
+    "dev": "run-p watch:css watch:js",
+    "all": "run-p build:example watch:css watch:js serve",
+    "build:example": "cd example/ && yarn dev",
+    "build": "run-s build:src build:css type:dts",
+    "build:watch": "run-p watch:js build:src build:css type:dts",
+    "build:src": "node ./scripts/build.js",
+    "watch:css": "npx postcss src/app.css -o dist/index.css --watch",
+    "watch:js": "node ./scripts/watch.js",
+    "type:dts": "tsc --emitDeclarationOnly --declarationMap",
+    "build:css": "npx postcss src/app.css -o dist/index.css && cp src/styles.d.ts dist/",
+    "build:clean": "rm -rf dist && yarn type:dts && yarn build",
+    "prepublish": "yarn build:clean",
+    "lint": "eslint && npx prettier --write . '!dist/**'",
+    "format": "prettier --write . '!dist/**'",
+    "serve": "./serve-component",
+    "push:cdn:beta": "curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/beta/search-component/index.css --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/index.css && curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/beta/search-component/index.js --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/index.js && curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/beta/search-component/vanilla/index.js --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/vanilla/index.js ",
+    "push:cdn:stable": "curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/stable/search-component/index.css --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/index.css && curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/stable/search-component/index.js --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/index.js && curl --request PUT --url https://ny.storage.bunnycdn.com/trieve/stable/search-component/vanilla/index.js --header \"AccessKey: ${BUNNY_API_KEY}\"  --header 'Content-Type: application/octet-stream' --header 'accept: application/json' --data-binary @dist/vanilla/index.js "
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "@tailwindcss/forms": "^0.5.9",
+    "@types/eslint__js": "^8.42.3",
+    "@types/heic-convert": "^2.1.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.23.1",
+    "esbuild-node-externals": "^1.14.0",
+    "esbuild-plugin-umd-wrapper": "^3.0.0",
+    "esbuild-register": "^3.6.0",
+    "eslint": "^9.10.0",
+    "eslint-plugin-react": "^7.36.1",
+    "npm-run-all": "^4.1.5",
+    "postcss": "^8.4.45",
+    "postcss-cli": "^11.0.0",
+    "postcss-csso": "^6.0.1",
+    "postcss-import": "^16.1.0",
+    "postcss-nested": "^6.2.0",
+    "prettier": "3.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-scan": "^0.3.2",
+    "tailwindcss": "^3.4.11",
+    "tailwindcss-scoped-preflight": "^3.4.10",
+    "typescript": "^5.6.2",
+    "typescript-eslint": "^8.3.0"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@formkit/auto-animate": "^0.8.2",
+    "@r2wc/react-to-web-component": "^2.0.3",
+    "@thumbmarkjs/thumbmarkjs": "^0.16.1",
+    "clsx": "^2.1.1",
+    "cva": "npm:class-variance-authority",
+    "heic-convert": "^2.1.0",
+    "jotai": "^2.11.0",
+    "motion": "^11.17.0",
+    "react-intersection-observer-hook": "^3.0.1",
+    "react-markdown": "^9.0.1",
+    "react-pdf-spotlight": "0.0.16",
+    "react-scan": "^0.3.2",
+    "react-snap-carousel": "^0.5.0",
+    "react-two-thumb-input-range": "^1.0.7",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.0.2",
+    "trieve-ts-sdk": "*"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0-rc",
+    "react-dom": "^18.3.1 || ^19.0.0-rc"
+  }
+}

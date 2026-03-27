@@ -1,0 +1,39 @@
+{
+  "name": "@trieve/docusaurus-search-theme",
+  "version": "0.1.17",
+  "author": "cdxker <denzell.f@trieve.ai>",
+  "license": "MIT",
+  "homepage": "https://github.com/devflowinc/trieve/tree/main/clients/docusaurus-theme-search",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "yarn nodemon --exec 'yarn build:dev' --watch src -e jsx,js",
+    "build:dev": "rm -rf dist && yarn transform  && yarn copy",
+    "build": "rm -rf dist && yarn transform  && yarn copy && yarn format",
+    "copy": "cp -r src/theme dist",
+    "transform": "esbuild src/**/*.js --outdir=dist --format=cjs --platform=node --allow-overwrite",
+    "format": "prettier --write .",
+    "pub": "yarn build && yarn publish --access public"
+  },
+  "dependencies": {
+    "trieve-search-component": "^0.0.65"
+  },
+  "peerDependencies": {
+    "@docusaurus/core": "^2.0.0 || ^3.0.0",
+    "react": "^17 || ^18 || ^19.0.0-rc",
+    "react-dom": "^17 || ^18 || ^19.0.0-rc"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.4.0",
+    "esbuild": "^0.23.0",
+    "json-to-markdown": "^1.0.4",
+    "nodemon": "^3.1.7",
+    "parse5": "^7.1.2",
+    "prettier": "^3.3.3"
+  }
+}

@@ -1,0 +1,1244 @@
+use super::auth_handler::AdminOnly;
+use crate::{
+    data::models::{
+        CTRAnalytics, CTRAnalyticsResponse, CTRType, ClusterAnalytics, ClusterAnalyticsResponse,
+        ComponentAnalytics, ComponentAnalyticsResponse, DatasetAndOrgWithSubAndPlan, DateRange,
+        EventDataTypes, EventNameAndCountsResponse, EventTypes, EventsForTopicResponse,
+        GetEventsRequestBody, OrganizationWithSubAndPlan, Pool, RAGAnalytics, RAGAnalyticsResponse,
+        RecommendationAnalytics, RecommendationAnalyticsResponse, SearchAnalytics,
+        SearchAnalyticsResponse, TopDatasetsRequestTypes,
+    },
+    errors::ServiceError,
+    operators::{
+        analytics_operator::*,
+        clickhouse_operator::{ClickHouseEvent, EventQueue},
+    },
+    utils::clickhouse_query::AnalyticsQuery,
+};
+use actix_web::{web, HttpResponse};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+/// Get Cluster Analytics
+///
+/// This route allows you to view the cluster analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/search/cluster",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = ClusterAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The cluster analytics for the dataset", body = ClusterAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting cluster analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_cluster_analytics(
+    data: web::Json<ClusterAnalytics>,
+    _user: AdminOnly,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        ClusterAnalytics::ClusterTopics { filter } => {
+            let clusters = get_clusters_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            ClusterAnalyticsResponse::ClusterTopics(clusters)
+        }
+        ClusterAnalytics::ClusterQueries { cluster_id, page } => {
+            let cluster_queries = get_queries_for_cluster_query(
+                dataset_org_plan_sub.dataset.id,
+                cluster_id,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            ClusterAnalyticsResponse::ClusterQueries(cluster_queries)
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+pub struct RateQueryRequest {
+    pub query_id: uuid::Uuid,
+    pub rating: i32,
+    pub note: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Rate Search
+///
+/// This route allows you to Rate a search query.
+#[utoipa::path(
+    put,
+    path = "/analytics/search",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = RateQueryRequest, description = "JSON request payload to rate a search query", content_type = "application/json"),
+    responses(
+        (status = 204, description = "The search query was successfully rated"),
+
+        (status = 400, description = "Service error relating to rating a search query", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn set_search_query_rating(
+    data: web::Json<RateQueryRequest>,
+    _user: AdminOnly,
+    event_queue: web::Data<EventQueue>,
+    _dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let data = data.into_inner();
+
+    event_queue
+        .send(ClickHouseEvent::SearchQueryRatingEvent(data))
+        .await;
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Rate RAG
+///
+/// This route allows you to Rate a RAG query.
+#[utoipa::path(
+    put,
+    path = "/analytics/rag",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = RateQueryRequest, description = "JSON request payload to rate a RAG query", content_type = "application/json"),
+    responses(
+        (status = 204, description = "The RAG query was successfully rated"),
+
+        (status = 400, description = "Service error relating to rating a RAG query", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn set_rag_query_rating(
+    data: web::Json<RateQueryRequest>,
+    _user: AdminOnly,
+    event_queue: web::Data<EventQueue>,
+    _dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let data = data.into_inner();
+
+    event_queue
+        .send(ClickHouseEvent::RagQueryRatingEvent(data))
+        .await;
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Get Search Analytics
+///
+/// This route allows you to view the search analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/search",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = SearchAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The search analytics for the dataset", body = SearchAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting search analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_search_analytics(
+    data: web::Json<SearchAnalytics>,
+    _user: AdminOnly,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        SearchAnalytics::LatencyGraph {
+            filter,
+            granularity,
+        } => {
+            let latency_graph = get_latency_graph_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::LatencyGraph(latency_graph)
+        }
+        SearchAnalytics::SearchUsageGraph {
+            filter,
+            granularity,
+        } => {
+            let search_frequency_graph = get_search_usage_graph_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::SearchUsageGraph(search_frequency_graph)
+        }
+        SearchAnalytics::SearchMetrics { filter } => {
+            let search_metrics = get_search_metrics_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::SearchMetrics(search_metrics)
+        }
+        SearchAnalytics::HeadQueries { filter, page } => {
+            let head_queries = get_head_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::HeadQueries(head_queries)
+        }
+        SearchAnalytics::LowConfidenceQueries {
+            filter,
+            page,
+            threshold,
+        } => {
+            let low_confidence_queries = get_low_confidence_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                threshold,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::LowConfidenceQueries(low_confidence_queries)
+        }
+        SearchAnalytics::NoResultQueries { filter, page } => {
+            let no_result_queries = get_no_result_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::NoResultQueries(no_result_queries)
+        }
+        SearchAnalytics::SearchQueries {
+            filter,
+            has_clicks,
+            page,
+            sort_by,
+            sort_order,
+        } => {
+            let search_queries = get_all_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                sort_by,
+                sort_order,
+                has_clicks,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::SearchQueries(search_queries)
+        }
+        SearchAnalytics::QueryDetails { request_id } => {
+            let query = get_search_query(
+                dataset_org_plan_sub.dataset.id,
+                request_id,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::QueryDetails(Box::new(query))
+        }
+        SearchAnalytics::CountQueries {
+            filter,
+            count_collapsed_queries,
+        } => {
+            let count_queries = get_query_counts_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                count_collapsed_queries,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::CountQueries(count_queries)
+        }
+        SearchAnalytics::PopularFilters { filter } => {
+            let popular_filters = get_popular_filter_values_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::PopularFilters(popular_filters)
+        }
+        SearchAnalytics::CTRMetricsOverTime {
+            filter,
+            granularity,
+        } => {
+            let ctr_metrics_over_time = get_search_ctr_metrics_over_time_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            SearchAnalyticsResponse::CTRMetricsOverTime(ctr_metrics_over_time)
+        }
+        SearchAnalytics::SearchConversionRate {
+            filter,
+            granularity,
+        } => {
+            let search_conversion_rate = get_search_conversion_rate_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::SearchConversionRate(search_conversion_rate)
+        }
+        SearchAnalytics::SearchesPerUser {
+            filter,
+            granularity,
+        } => {
+            let searches_per_user = get_searches_per_user_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            SearchAnalyticsResponse::SearchesPerUser(searches_per_user)
+        }
+        SearchAnalytics::SearchAverageRating {
+            filter,
+            granularity,
+        } => {
+            let search_average_rating = get_search_average_rating_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            SearchAnalyticsResponse::SearchAverageRating(search_average_rating)
+        }
+        SearchAnalytics::EventFunnel { filter } => {
+            let mut event_counts = get_search_event_counts_query(
+                dataset_org_plan_sub.dataset.id,
+                filter.clone(),
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            // Sort by event_count
+            event_counts.sort_by(|a, b| b.event_count.cmp(&a.event_count));
+
+            SearchAnalyticsResponse::EventFunnel(EventNameAndCountsResponse {
+                event_names: event_counts,
+            })
+        }
+        SearchAnalytics::SearchRevenue {
+            filter,
+            direct,
+            granularity,
+        } => {
+            let search_revenue = get_search_revenue_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                direct,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            SearchAnalyticsResponse::SearchRevenue(search_revenue)
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+/// Get RAG Analytics
+///
+/// This route allows you to view the RAG analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/rag",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = RAGAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The RAG analytics for the dataset", body = RAGAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting RAG analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_rag_analytics(
+    data: web::Json<RAGAnalytics>,
+    _user: AdminOnly,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        RAGAnalytics::RAGUsage { filter } => {
+            let rag_graph = get_rag_usage_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::RAGUsage(rag_graph)
+        }
+        RAGAnalytics::RAGQueries {
+            filter,
+            page,
+            has_clicks,
+            sort_by,
+            sort_order,
+        } => {
+            let rag_queries = get_rag_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                sort_by,
+                sort_order,
+                has_clicks,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::RAGQueries(rag_queries)
+        }
+
+        RAGAnalytics::RAGUsageGraph {
+            filter,
+            granularity,
+        } => {
+            let rag = get_rag_usage_graph_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::RAGUsageGraph(rag)
+        }
+        RAGAnalytics::RAGQueryDetails { request_id } => {
+            let rag_query = get_rag_query(
+                dataset_org_plan_sub.dataset.id,
+                request_id,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::RAGQueryDetails(Box::new(rag_query))
+        }
+        RAGAnalytics::RAGQueryRatings { filter } => {
+            let rag_query_ratings = get_rag_query_ratings_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::RAGQueryRatings(rag_query_ratings)
+        }
+        RAGAnalytics::TopicQueries {
+            filter,
+            page,
+            topic_events_filter,
+            sort_by,
+            sort_order,
+        } => {
+            let topic_queries = get_topic_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                sort_by,
+                sort_order,
+                topic_events_filter,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::TopicQueries(topic_queries)
+        }
+        RAGAnalytics::TopicDetails { topic_id } => {
+            let topic_details =
+                get_topic_details_query(topic_id, clickhouse_client.get_ref()).await?;
+            RAGAnalyticsResponse::TopicDetails(topic_details)
+        }
+        RAGAnalytics::TopicsOverTime {
+            filter,
+            granularity,
+        } => {
+            let topics_over_time = get_topics_over_time_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::TopicsOverTime(topics_over_time)
+        }
+        RAGAnalytics::CTRMetricsOverTime {
+            filter,
+            granularity,
+        } => {
+            let ctr_metrics_over_time = get_ctr_metrics_over_time_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::CTRMetricsOverTime(ctr_metrics_over_time)
+        }
+        RAGAnalytics::MessagesPerUser {
+            filter,
+            granularity,
+        } => {
+            let messages_per_user = get_messages_per_user(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::MessagesPerUser(messages_per_user)
+        }
+        RAGAnalytics::ChatAverageRating {
+            filter,
+            granularity,
+        } => {
+            let chat_average_rating = get_chat_average_rating_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::ChatAverageRating(chat_average_rating)
+        }
+        RAGAnalytics::ChatConversionRate {
+            filter,
+            granularity,
+        } => {
+            let chat_conversion_rate = get_chat_conversion_rate_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::ChatConversionRate(chat_conversion_rate)
+        }
+        RAGAnalytics::EventFunnel { filter } => {
+            let event_counts = get_rag_event_counts_query(
+                dataset_org_plan_sub.dataset.id,
+                filter.clone(),
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            RAGAnalyticsResponse::EventFunnel(EventNameAndCountsResponse {
+                event_names: event_counts,
+            })
+        }
+        RAGAnalytics::EventsForTopic { topic_id } => {
+            let events = get_events_by_topic_ids_query(
+                dataset_org_plan_sub.dataset.id,
+                vec![topic_id],
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            RAGAnalyticsResponse::EventsForTopic(EventsForTopicResponse { events })
+        }
+        RAGAnalytics::ChatRevenue {
+            filter,
+            direct,
+            granularity,
+        } => {
+            let chat_revenue = get_chat_revenue_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                direct,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            RAGAnalyticsResponse::ChatRevenue(chat_revenue)
+        }
+        RAGAnalytics::PopularChats { filter, page } => {
+            let most_popular_chats = get_most_popular_chats_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RAGAnalyticsResponse::PopularChats(most_popular_chats)
+        }
+        RAGAnalytics::FollowupQueries { filter, page } => {
+            let followup_queries = get_top_followup_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            RAGAnalyticsResponse::FollowupQueries(followup_queries)
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+/// Get Analytics
+///
+/// This route allows you to view the analytics for a dataset using a structured query.
+#[utoipa::path(
+    post,
+    path = "/analytics",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = AnalyticsQuery, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The analytics for the dataset", body = serde_json::Value),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_analytics(
+    _user: AdminOnly,
+    data: web::Json<AnalyticsQuery>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let result = data
+        .into_inner()
+        .execute(
+            &dataset_org_plan_sub.dataset.id.to_string(),
+            &clickhouse_client,
+        )
+        .await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+/// Get Recommendation Analytics
+///
+/// This route allows you to view the recommendation analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/recommendations",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = RecommendationAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The recommendation analytics for the dataset", body = RecommendationAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting recommendation analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_recommendation_analytics(
+    data: web::Json<RecommendationAnalytics>,
+    _user: AdminOnly,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        RecommendationAnalytics::LowConfidenceRecommendations {
+            filter,
+            page,
+            threshold,
+        } => {
+            let low_confidence_recommendations = get_low_confidence_recommendations_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                threshold,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::LowConfidenceRecommendations(
+                low_confidence_recommendations,
+            )
+        }
+        RecommendationAnalytics::RecommendationQueries {
+            filter,
+            page,
+            has_clicks,
+            sort_by,
+            sort_order,
+        } => {
+            let recommendation_queries = get_recommendation_queries_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                sort_by,
+                sort_order,
+                has_clicks,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::RecommendationQueries(recommendation_queries)
+        }
+        RecommendationAnalytics::QueryDetails { request_id } => {
+            let recommendation_query = get_recommendation_query(
+                dataset_org_plan_sub.dataset.id,
+                request_id,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::QueryDetails(Box::new(recommendation_query))
+        }
+        RecommendationAnalytics::RecommendationUsageGraph {
+            filter,
+            granularity,
+        } => {
+            let recommendation_usage_graph = get_recommendation_usage_graph_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::RecommendationUsageGraph(recommendation_usage_graph)
+        }
+        RecommendationAnalytics::RecommendationsPerUser {
+            filter,
+            granularity,
+        } => {
+            let recommendations_per_user = get_recommendations_per_user_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::RecommendationsPerUser(recommendations_per_user)
+        }
+        RecommendationAnalytics::RecommendationsCTRRate {
+            filter,
+            granularity,
+        } => {
+            let recommendations_ctr_rate = get_recommendations_ctr_rate_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::RecommendationsCTRRate(recommendations_ctr_rate)
+        }
+        RecommendationAnalytics::RecommendationConversionRate {
+            filter,
+            granularity,
+        } => {
+            let recommendation_conversion_rate = get_recommendation_conversion_rate_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+            RecommendationAnalyticsResponse::RecommendationConversionRate(
+                recommendation_conversion_rate,
+            )
+        }
+        RecommendationAnalytics::EventFunnel { filter } => {
+            let mut event_counts = get_recommendation_event_counts_query(
+                dataset_org_plan_sub.dataset.id,
+                filter.clone(),
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            event_counts.sort_by(|a, b| b.event_count.cmp(&a.event_count));
+
+            RecommendationAnalyticsResponse::EventFunnel(EventNameAndCountsResponse {
+                event_names: event_counts,
+            })
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+pub struct CTRDataRequestBody {
+    /// The request id for the CTR data
+    pub request_id: uuid::Uuid,
+    /// The type of CTR data being sent e.g. search or recommendation
+    pub ctr_type: CTRType,
+    /// The ID of chunk that was clicked
+    pub clicked_chunk_id: Option<uuid::Uuid>,
+    /// The tracking ID of the chunk that was clicked
+    pub clicked_chunk_tracking_id: Option<String>,
+    /// The position of the clicked chunk
+    pub position: i32,
+    /// Any metadata you want to include with the event i.e. action, user_id, etc.
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Send CTR Data
+///
+/// This route allows you to send clickstream data to the system. Clickstream data is used to fine-tune the re-ranking of search results and recommendations.
+#[utoipa::path(
+    put,
+    path = "/analytics/ctr",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = CTRDataRequestBody, description = "JSON request payload to send CTR data", content_type = "application/json"),
+    responses(
+        (status = 204, description = "The CTR data was successfully sent"),
+
+        (status = 400, description = "Service error relating to sending CTR data", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+#[deprecated]
+pub async fn send_ctr_data(
+    _user: AdminOnly,
+    data: web::Json<CTRDataRequestBody>,
+    event_queue: web::Data<EventQueue>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let event_data = EventTypes::from(data.into_inner()).to_event_data(
+        dataset_org_plan_sub.dataset.id,
+        dataset_org_plan_sub.dataset.organization_id,
+    );
+
+    if let EventDataTypes::EventDataClickhouse(event_data) = event_data {
+        event_queue
+            .send(ClickHouseEvent::AnalyticsEvent(event_data))
+            .await;
+    }
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Send User Event Data
+///
+/// This route allows you to send user event data to the system.
+#[utoipa::path(
+    put,
+    path = "/analytics/events",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = EventTypes, description = "JSON request payload to send event data", content_type = "application/json"),
+    responses(
+        (status = 204, description = "The event data was successfully sent"),
+
+        (status = 400, description = "Service error relating to sending event data", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn send_event_data(
+    _user: AdminOnly,
+    data: web::Json<EventTypes>,
+    event_queue: web::Data<EventQueue>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let event_data = data.into_inner().to_event_data(
+        dataset_org_plan_sub.dataset.id,
+        dataset_org_plan_sub.dataset.organization_id,
+    );
+
+    match event_data {
+        EventDataTypes::EventDataClickhouse(event_data) => {
+            event_queue
+                .send(ClickHouseEvent::AnalyticsEvent(event_data))
+                .await;
+        }
+        EventDataTypes::SearchQueryEventClickhouse(event_data) => {
+            event_queue
+                .send(ClickHouseEvent::SearchQueryEvent(event_data))
+                .await;
+        }
+        EventDataTypes::RagQueryEventClickhouse(event_data) => {
+            event_queue
+                .send(ClickHouseEvent::RagQueryEvent(event_data))
+                .await;
+        }
+        EventDataTypes::RecommendationEventClickhouse(event_data) => {
+            event_queue
+                .send(ClickHouseEvent::RecommendationEvent(event_data))
+                .await;
+        }
+    }
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Get CTR Analytics
+///
+/// This route allows you to view the CTR analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/events/ctr",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = CTRAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The CTR analytics for the dataset", body = CTRAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting CTR analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_ctr_analytics(
+    _user: AdminOnly,
+    data: web::Json<CTRAnalytics>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    pool: web::Data<Pool>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        CTRAnalytics::SearchCTRMetrics { filter } => {
+            let ctr_metrics = get_search_ctr_metrics_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::SearchCTRMetrics(ctr_metrics)
+        }
+        CTRAnalytics::SearchesWithClicks { filter, page } => {
+            let searches_with_clicks = get_searches_with_clicks_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                pool.clone(),
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::SearchesWithClicks(searches_with_clicks)
+        }
+        CTRAnalytics::SearchesWithoutClicks { filter, page } => {
+            let searches_without_clicks = get_searches_without_clicks_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::SearchesWithoutClicks(searches_without_clicks)
+        }
+        CTRAnalytics::RecommendationCTRMetrics { filter } => {
+            let ctr_metrics = get_recommendation_ctr_metrics_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::RecommendationCTRMetrics(ctr_metrics)
+        }
+        CTRAnalytics::RecommendationsWithClicks { filter, page } => {
+            let recommendations_with_clicks = get_recommendations_with_clicks_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                pool.clone(),
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::RecommendationsWithClicks(recommendations_with_clicks)
+        }
+        CTRAnalytics::RecommendationsWithoutClicks { filter, page } => {
+            let recommendations_without_clicks = get_recommendations_without_clicks_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            CTRAnalyticsResponse::RecommendationsWithoutClicks(recommendations_without_clicks)
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+/// Get Component Analytics
+///
+/// This route allows you to view the component analytics for a dataset.
+#[utoipa::path(
+    post,
+    path = "/analytics/events/component",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = ComponentAnalytics, description = "JSON request payload to filter the graph", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The component analytics for the dataset", body = ComponentAnalyticsResponse),
+
+        (status = 400, description = "Service error relating to getting component analytics", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_component_analytics(
+    _user: AdminOnly,
+    data: web::Json<ComponentAnalytics>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let response = match data.into_inner() {
+        ComponentAnalytics::TotalUniqueUsers {
+            filter,
+            granularity,
+        } => {
+            let total_unique_users = get_total_unique_users_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            ComponentAnalyticsResponse::TotalUniqueUsers(total_unique_users)
+        }
+        ComponentAnalytics::TopPages { filter, page } => {
+            let top_pages = get_top_pages_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            ComponentAnalyticsResponse::TopPages(top_pages)
+        }
+        ComponentAnalytics::TopComponents { filter, page } => {
+            let top_components = get_top_components_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                filter,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            ComponentAnalyticsResponse::TopComponents(top_components)
+        }
+        ComponentAnalytics::ComponentNames { page } => {
+            let component_names = get_component_names_query(
+                dataset_org_plan_sub.dataset.id,
+                page,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            ComponentAnalyticsResponse::ComponentNames(component_names)
+        }
+        ComponentAnalytics::ComponentInteractionTime {
+            filter,
+            granularity,
+        } => {
+            let component_interaction_time = get_component_interaction_time_query(
+                dataset_org_plan_sub.dataset.id,
+                filter,
+                granularity,
+                clickhouse_client.get_ref(),
+            )
+            .await?;
+
+            ComponentAnalyticsResponse::ComponentInteractionTime(component_interaction_time)
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+/// Get All User Events
+///
+/// This route allows you to view all user events.
+#[utoipa::path(
+    post,
+    path = "/analytics/events/all",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = GetEventsRequestBody, description = "JSON request payload to filter the events", content_type = "application/json"),
+    responses(
+        (status = 200, description = "The events for the request", body = GetEventsResponseBody),
+
+        (status = 400, description = "Service error relating to getting events", body = ErrorResponseBody),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_all_events(
+    _user: AdminOnly,
+    data: web::Json<GetEventsRequestBody>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let dataset_id = dataset_org_plan_sub.dataset.id;
+    let events = get_all_events_query(
+        dataset_id,
+        data.page,
+        data.filter.clone(),
+        clickhouse_client.get_ref(),
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(events))
+}
+
+/// Get User Event By ID
+///
+/// This route allows you to view an user event by its ID. You can pass in any type of event and get the details for that event.
+#[utoipa::path(
+    get,
+    path = "/analytics/events/{event_id}",
+    context_path = "/api",
+    tag = "Analytics",
+    responses(
+        (status = 200, description = "The event for the request", body = EventData),
+
+        (status = 400, description = "Service error relating to getting an event", body = ErrorResponseBody),
+    ),
+    params(
+        ("TR-Dataset" = uuid::Uuid, Header, description = "The dataset id or tracking_id to use for the request. We assume you intend to use an id if the value is a valid uuid."),
+        ("event_id" = uuid::Uuid, Path, description = "The event id to use for the request"),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_event_by_id(
+    _user: AdminOnly,
+    data: web::Path<uuid::Uuid>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    dataset_org_plan_sub: DatasetAndOrgWithSubAndPlan,
+) -> Result<HttpResponse, ServiceError> {
+    let dataset_id = dataset_org_plan_sub.dataset.id;
+    let events =
+        get_event_by_id_query(dataset_id, data.into_inner(), clickhouse_client.get_ref()).await?;
+
+    Ok(HttpResponse::Ok().json(events))
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+pub struct GetTopDatasetsRequestBody {
+    pub r#type: TopDatasetsRequestTypes,
+    pub date_range: Option<DateRange>,
+}
+
+/// Get Top Datasets
+///
+/// This route allows you to view the top datasets for a given type.
+#[utoipa::path(
+    post,
+    path = "/analytics/top",
+    context_path = "/api",
+    tag = "Analytics",
+    request_body(content = GetTopDatasetsRequestBody, description = "JSON request payload to filter the top datasets", content_type = "application/json"),
+    params(
+        ("TR-Organization" = uuid::Uuid, Header, description = "The organization id to use for the request"),
+    ),
+    responses(
+        (status = 200, description = "The top datasets for the request", body = Vec<TopDatasetsResponse>),
+        (status = 400, description = "Service error relating to getting top datasets", body = ErrorResponseBody),
+    ),
+    security(
+        ("ApiKey" = ["admin"]),
+    )
+)]
+pub async fn get_top_datasets(
+    _user: AdminOnly,
+    data: web::Json<GetTopDatasetsRequestBody>,
+    clickhouse_client: web::Data<clickhouse::Client>,
+    org_with_plan_and_sub: OrganizationWithSubAndPlan,
+    pool: web::Data<Pool>,
+) -> Result<HttpResponse, ServiceError> {
+    let top_datasets = get_top_datasets_query(
+        data.into_inner(),
+        org_with_plan_and_sub.organization.id,
+        clickhouse_client.get_ref(),
+        pool,
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(top_datasets))
+}

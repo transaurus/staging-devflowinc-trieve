@@ -1,0 +1,226 @@
+<style>
+  {{ block.settings.custom_css }}
+</style>
+
+{% assign dev_mode = app.metafields.trieve.dev_mode %}
+<script
+  type="module"
+>
+  {% if dev_mode %}
+    import { renderToDiv } from "http://localhost:8000/dist/vanilla/index.js";
+    let cssRelease = "local";
+  {% else %}
+    import {renderToDiv} from 'https://cdn.trieve.ai/beta/search-component/vanilla/index.js';
+    let cssRelease = "beta";
+  {% endif %}
+
+
+  import {addToCart, checkCartQuantity} from '{{'cart-manager.js' | asset_url}}';
+
+  const root = document.createElement('div');
+  root.id = "trieve-global-root";
+  document.body.appendChild(root);
+
+  const appMetafieldTrieve = {{ app.metafields.trieve | json }};
+  const currency = {{ shop.currency | json }};
+  const currencySymbol = (currency) =>
+    new Intl.NumberFormat("en-US", { style: 'currency', currency })
+      .formatToParts(1)
+      .find(x => x.type === "currency")
+      .value;
+
+  const toBool = (value) => value === 'true' || value === true;
+  const getValue = (value, defaultValue) => {
+    if (value === null || value === undefined || value === '') {
+      return defaultValue;
+    }
+    return value;
+  };
+
+  if (!appMetafieldTrieve.dataset_id || !appMetafieldTrieve.api_key) {
+    console.error("Trieve: Cannot render global Trieve comopnent due to missing dataset_id or api_key in the app metafields");
+  } else {
+    renderToDiv(root, {
+      type: "ecommerce",
+      baseUrl: {% if dev_mode %} "http://localhost:8090" {% else %} "https://api.trieve.ai" {% endif %},
+      cssRelease: cssRelease,
+      useGroupSearch: true,
+      hideOpenButton: true,
+      defaultSearchMode: "chat",
+      apiKey: appMetafieldTrieve.api_key,
+      datasetId: appMetafieldTrieve.dataset_id,
+      zIndex: Number(getValue(appMetafieldTrieve.z_index, 2147483645)),
+      defaultAiQuestions: appMetafieldTrieve.preset_questions,
+      brandColor: getValue("{{ block.settings.brand_color }}", ""),
+      brandLogoImgSrcUrl: getValue("{{ block.settings.brand_logo_img_src_url }}", undefined),
+      chatPlaceholder: getValue("{{ block.settings.chat_placeholder }}", "Ask anything..."),
+      allowRefreshSuggestedQueries: toBool(getValue("{{ block.settings.show_sugestions_refresh }}", true)),
+      suggestedQueries: toBool(getValue("{{ block.settings.suggested_queries }}", true)),
+      followupQuestions: toBool(getValue("{{ block.settings.suggested_queries }}", true)),
+      numberOfSuggestions: Number(getValue("{{ block.settings.number_of_suggestions }}", 3)),
+      openLinksInNewTab: toBool(getValue("{{ block.settings.open_links_new_tab }}", true)),
+      theme: getValue("{{ block.settings.theme }}", "light"),
+      showTrieve: false,
+      relevanceToolCallOptions: appMetafieldTrieve.relevance_tool_call_options,
+      priceToolCallOptions: appMetafieldTrieve.price_tool_call_options,
+      searchToolCallOptions: appMetafieldTrieve.search_tool_call_options,
+      getCartQuantity: (trackingId) => {
+        return checkCartQuantity(parseInt(trackingId));
+      },
+      searchOptions: {
+        use_autocomplete: true,
+        search_type: "fulltext",
+        typo_options: {
+          correct_typos: true,
+        },
+        filters: {
+          must: [
+            {
+              field: "metadata.variant_inventory",
+              range: {
+                gt: 0
+              }
+            },
+            {
+              field: "metadata.status",
+              match_all: [
+                "ACTIVE"
+              ]
+            }
+          ]
+        }
+      },
+      chatFilters: {
+        must: [
+          {
+            field: "metadata.variant_inventory",
+            range: {
+              gt: 0
+            }
+          },
+          {
+            field: "metadata.status",
+            match_all: [
+              "ACTIVE"
+            ]
+          },
+        ],
+        should: [
+          {
+            field: "tag_set",
+            match_any: [
+              "policy"
+            ]
+          },
+          {
+            field: "metadata.variant_inventory",
+            range: {
+              gt: 0
+            }
+          },
+          {
+            field: "metadata.status",
+            match_all: [
+              "ACTIVE"
+            ]
+          },
+        ]
+      },
+      defaultCurrency: currencySymbol(currency),
+      {% comment %} not on inline {% endcomment %}
+      showFloatingSearchIcon: toBool(getValue("{{ block.settings.show_floating_search_icon }}", true)),
+      floatingSearchIconPosition: getValue("{{ block.settings.floating_icon_pos }}", "left"),
+      allowSwitchingModes: false,
+      hidePrice: !toBool(getValue("{{ block.settings.display_price }}", true)),
+      hideChunkHtml: !toBool(getValue("{{ block.settings.display_description }}", true)),
+    });
+  }
+</script>
+
+{% comment %}
+  see more about the schema section here. https://shopify.dev/docs/storefronts/themes/architecture/sections/section-schema#schema
+
+  If the input is not valid json, it will not work
+{% endcomment %}
+{% schema %}
+{
+  "name": "Trieve Global component",
+  "target": "body",
+  "settings": [
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "options": [
+        { "label": "Light", "value": "light" },
+        { "label": "Dark", "value": "dark" }
+      ],
+      "default": "light"
+    },
+    {
+      "type": "color",
+      "id": "brand_color",
+      "label": "Brand Color",
+      "default": "#ff0000"
+    },
+    {
+      "type": "text",
+      "id": "brand_logo_img_src_url",
+      "label": "Brand Logo Image URL",
+      "placeholder": "https://cdn.trieve.ai/trieve-logo.png"
+    },
+    {
+      "type": "text",
+      "id": "chat_placeholder",
+      "label": "Input Placeholder Text",
+      "default": "Ask anything..."
+    },
+    {
+      "type": "checkbox",
+      "id": "open_links_new_tab",
+      "label": "Open Links in New Tab",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_sugestions_refresh",
+      "label": "Show Refresh Suggested Queries Button",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_floating_search_icon",
+      "label": "Show Floating Search Icon",
+      "default": true
+    },
+    {
+      "type": "select",
+      "id": "floating_icon_pos",
+      "label": "Floating Icon Position",
+      "options": [
+        { "label": "Left", "value": "left" },
+        { "label": "Right", "value": "right" }
+      ],
+      "default": "left"
+    },
+    {
+      "type": "checkbox",
+      "id": "display_price",
+      "label": "Display Product Price",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "display_description",
+      "label": "Display Product Description",
+      "default": true
+    },
+    {
+      "id": "custom_css",
+      "type": "textarea",
+      "label": "Custom CSS",
+      "placeholder": "#trieve-modal-search { background-color: red; }"
+    }
+  ]
+}
+{% endschema %}

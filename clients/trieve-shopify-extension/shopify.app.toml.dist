@@ -1,0 +1,69 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "8765d78a52aa8c12ae2d235d9d41529c"
+application_url = "https://sector-dan-discretion-verde.trycloudflare.com"
+embedded = true
+name = "trieve-search-extension"
+handle = "trieve-search-extension"
+
+[webhooks]
+api_version = "2025-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/create" ]
+  uri = "/webhooks/app/products/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/app/products/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/app/products/delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/webhooks/app/app_subscriptions/update"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "shop/redact" ]
+  uri = "/webhooks/app/redact-shop"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request" ]
+  uri = "/webhooks/app/customer-data"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/redact" ]
+  uri = "/webhooks/app/redact-customer"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,read_products,read_themes,write_pixels,read_customer_events"
+
+[auth]
+redirect_urls = [
+  "https://sector-dan-discretion-verde.trycloudflare.com/auth/callback",
+  "https://sector-dan-discretion-verde.trycloudflare.com/auth/shopify/callback",
+  "https://sector-dan-discretion-verde.trycloudflare.com/api/auth/callback"
+]
+
+[access.admin]
+direct_api_mode = "online"
+embedded_app_direct_api_access = true
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "trieveai.myshopify.com"
+include_config_on_deploy = true

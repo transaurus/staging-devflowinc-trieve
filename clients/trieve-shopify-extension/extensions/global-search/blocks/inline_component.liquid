@@ -1,0 +1,172 @@
+<style>
+  {{ block.settings.custom_css }}
+</style>
+
+<div class="trieve-inline-root"></div>
+
+{% assign dev_mode = app.metafields.trieve.dev_mode %}
+<script
+  type="module"
+>
+  {% if dev_mode %}
+    import { renderToDiv } from "http://localhost:8000/dist/vanilla/index.js";
+    let cssRelease = "local";
+  {% else %}
+    import {renderToDiv} from 'https://cdn.trieve.ai/beta/search-component/vanilla/index.js';   
+    let cssRelease = "beta";
+  {% endif %}
+
+  import {addToCart, checkCartQuantity} from '{{'cart-manager.js' | asset_url}}';
+
+  const inlineRoot = document.querySelector(".trieve-inline-root");
+  const appMetafieldTrieve = {{ app.metafields.trieve | json }};
+  const blockSettings = {{ block.settings | json }};
+  const productId = {{ product.id | json }};
+  const productTitle = {{ product.title | json }};
+  const productMetafieldsTrieve = {{ app.metafields.trieve | json }}[`trievePDPQuestions-${productId}`];
+  let trievePDPQuestions = null;
+  if (productMetafieldsTrieve) {
+    trievePDPQuestions = productMetafieldsTrieve;
+  }
+
+  let defaultAiQuestions = {{ block.settings.default_ai_questions | json }};
+  if (defaultAiQuestions && typeof defaultAiQuestions === "string") {
+    defaultAiQuestions = defaultAiQuestions.split(",").map((question) => question.trim());
+  } else {
+    defaultAiQuestions = null;
+  }
+  if (trievePDPQuestions && trievePDPQuestions.length > 0) {
+    defaultAiQuestions = trievePDPQuestions.map((question) => question.text);
+  }
+  const currency = {{ shop.currency | json }};
+  const currencySymbol = (currency) =>
+    new Intl.NumberFormat("en-US", { style: 'currency', currency })
+      .formatToParts(1)
+      .find(x => x.type === "currency")
+      .value;
+
+  const toBool = (value) => value === 'true' || value === true;
+  const getValue = (value, defaultValue) => {
+    if (value === null || value === undefined || value === '') {
+      return defaultValue;
+    }
+    return value;
+  };
+
+  if (!appMetafieldTrieve.dataset_id || !appMetafieldTrieve.api_key) {
+    console.error("Trieve: Cannot render inline Trieve component due to missing dataset_id or api_key in the app metafields");
+  } else {
+    renderToDiv(inlineRoot, {
+      type: "ecommerce",
+      baseUrl: {% if dev_mode %} "http://localhost:8090" {% else %} "https://api.trieve.ai" {% endif %},
+      cssRelease: cssRelease,
+      useGroupSearch: false,
+      hideOpenButton: true,
+      defaultSearchMode: "chat",
+      apiKey: appMetafieldTrieve.api_key,
+      datasetId: appMetafieldTrieve.dataset_id,
+      zIndex: Number(getValue(appMetafieldTrieve.z_index, 2147483645)),
+      defaultAiQuestions,
+      brandColor: getValue("{{ block.settings.brand_color }}", "#ff0000"),
+      brandLogoImgSrcUrl: getValue("{{ block.settings.brand_logo_img_src_url }}", undefined),
+      chatPlaceholder: getValue("{{ block.settings.chat_placeholder }}", "Ask anything..."),
+      suggestedQueries: toBool(getValue("{{ block.settings.suggested_queries }}", true)),
+      allowRefreshSuggestedQueries: toBool(getValue("{{ block.settings.show_sugestions_refresh }}", true)),
+      followupQuestions: toBool(getValue("{{ block.settings.suggested_queries }}", true)),
+      numberOfSuggestions: Number(getValue("{{ block.settings.number_of_suggestions }}", 3)),
+      openLinksInNewTab: toBool(getValue("{{ block.settings.open_links_new_tab }}", true)),
+      theme: getValue("{{ block.settings.theme }}", "light"),
+      showTrieve: false,
+      relevanceToolCallOptions: appMetafieldTrieve.relevance_tool_call_options,
+      priceToolCallOptions: appMetafieldTrieve.price_tool_call_options,
+      searchToolCallOptions: appMetafieldTrieve.search_tool_call_options,
+      getCartQuantity: (trackingId) => {
+        return checkCartQuantity(parseInt(trackingId));
+      },
+      experimentIds: appMetafieldTrieve.ab_tests?.pdpExperimentIds || [],
+      searchOptions: {
+        use_autocomplete: true,
+        search_type: "fulltext",
+        typo_options: {
+          correct_typos: true,
+        },
+        filters: {}
+      },
+      chatFilters: {},
+      defaultCurrency: currencySymbol(currency),
+      {% comment %} not on global {% endcomment %}
+      inlineHeader: "",
+      inline: true,
+      groupTrackingId: productId ? productId.toString() : undefined,
+      cleanGroupName: productTitle ?? undefined,
+      analyticsSelectors: {
+        checkout: {
+          querySelector: appMetafieldTrieve.checkout_selector,
+        },
+      },
+      hidePrice: false,
+      hideChunkHtml: false,
+      systemPrompt: appMetafieldTrieve.pdp_prompt,
+    });
+  }
+</script>
+
+{% comment %}
+  see more about the schema section here. https://shopify.dev/docs/storefronts/themes/architecture/sections/section-schema#schema
+
+  If the input is not valid json, it will not work
+{% endcomment %}
+{% schema %}
+{
+  "name": "Trieve Product Chat",
+  "target": "section",
+  "settings": [
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "options": [
+        { "label": "Light", "value": "light" },
+        { "label": "Dark", "value": "dark" }
+      ],
+      "default": "light"
+    },
+    {
+      "type": "color",
+      "id": "brand_color",
+      "label": "Brand Color",
+      "default": "#ff0000"
+    },
+    {
+      "type": "text",
+      "id": "chat_placeholder",
+      "label": "Input Placeholder Text",
+      "default": "Ask anything..."
+    },
+    {
+      "type": "checkbox",
+      "id": "open_links_new_tab",
+      "label": "Open Links in New Tab",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_sugestions_refresh",
+      "label": "Show Refresh Suggested Queries Button",
+      "default": true
+    },
+    {
+      "id": "default_ai_questions",
+      "type": "textarea",
+      "label": "Initial Questions (Separated by commas)",
+      "placeholder": "What is this made of?"
+    },
+    {
+      "id": "custom_css",
+      "type": "textarea",
+      "label": "Custom CSS",
+      "placeholder": ".trieve-inline-root { background-color: red; }"
+    }
+  ]
+}
+{% endschema %}

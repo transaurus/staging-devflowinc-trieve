@@ -1,0 +1,23 @@
+{{- range $index, $service := .Values.embeddings }}
+{{- if ne $index 0 }}
+---
+{{- end }}
+{{- $name := (printf "embedding-%s" $service.name) }}
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: svc
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}

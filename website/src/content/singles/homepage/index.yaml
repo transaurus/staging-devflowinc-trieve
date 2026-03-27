@@ -1,0 +1,67 @@
+metadata:
+  title: Trieve
+  description: >-
+    Trieve is the end-to-end AI platform for chat, search, recommendations and
+    generative AI powering discovery experiences that delight users and drive
+    conversions.
+hero:
+  title: |
+    *Thank you* for all of the searches!
+  leadText: >-
+    Trieve is being sunset on November 1st and the license changed to MIT open
+    source as part of the acquisition by Mintlify. See more details on our blog.
+  image: /src/assets/images/home/hero/image.png
+  overrideActions:
+    - label: See the Announcement
+      href: https://www.trieve.ai/blog/trieve-is-being-acquired-by-mintlify
+      newTab: false
+      variant: primary
+killerFeatures:
+  title: |
+    The Everything Platform for AI
+  features:
+    - title: Conversational AI
+      description: >-
+        Code? Camping gear? Deliver AI-powered answers that delight your users
+        and drive conversions.
+      image: /src/assets/images/home/killerFeatures/features/0/image.png
+    - title: State-of-the-Art Search
+      description: >-
+        Boost satisfaction and sales with discovery that continuously optimizes
+        and understands intent to always deliver the right results front and
+        center.
+      image: /src/assets/images/home/killerFeatures/features/1/image.png
+    - title: Dynamic Recommendations
+      description: >-
+        Guide users to what they need next-seamlessly-with an AI personalization
+        engine that understands your business.
+      image: /src/assets/images/home/killerFeatures/features/2/image.png
+    - title: Comprehensive Analytics
+      description: >-
+        Insightful analytics for even the most demanding of product, marketing,
+        and sales teams.
+      image: /src/assets/images/home/killerFeatures/features/3/image.png
+    - title: Athletic API
+      description: >-
+        A robust 72-endpoint API productionizing the latest in AI so teams can
+        focus on shipping tomorrow’s breakthroughs-today.
+      image: /src/assets/images/home/killerFeatures/features/4/image.png
+secondFeatures:
+  title: |
+    Trieve Coordinates so You Can Scale
+  features:
+    - title: Use the Best Model for the Job
+      description: >-
+        Built-in support for open-source embeddings and secure LLMs, plus BYO
+        model support with your keys.
+      image: /src/assets/images/home/secondFeatures/features/0/image.png
+    - title: Self-Hostable
+      description: >-
+        Sensitive data? Need maximum performance? Host Trieve yourself with
+        terraform templates and no external dependencies.
+      image: /src/assets/images/home/secondFeatures/features/1/image.png
+callToAction:
+  title: |
+    Find out why valuable\
+    brands *choose* Trieve
+  overrideActions: []
